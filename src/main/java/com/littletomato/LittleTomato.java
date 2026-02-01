@@ -3,10 +3,15 @@ package com.littletomato;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.littletomato.warehouse.CloudWarehouseState;
+import com.littletomato.warehouse.WarehouseCommand;
 
 public class LittleTomato implements ModInitializer {
     public static final String MOD_ID = "little_tomato";
@@ -17,6 +22,8 @@ public class LittleTomato implements ModInitializer {
         LOGGER.info("Tomato Cloud Warehouse Initializing...");
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+
+            WarehouseCommand.register(dispatcher, registryAccess);
 
             dispatcher.register(Commands.literal("echo")
                     .then(Commands.argument("message", StringArgumentType.greedyString())
