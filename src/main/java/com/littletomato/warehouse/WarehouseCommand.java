@@ -2,7 +2,6 @@ package com.littletomato.warehouse;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
-import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import net.minecraft.commands.CommandBuildContext;
@@ -18,13 +17,18 @@ import net.minecraft.world.item.ItemStack;
 import java.util.Map;
 
 public class WarehouseCommand {
-    // 定义一些自定义异常提示
+    //Error Messages
     private static final SimpleCommandExceptionType ERROR_NOT_SIMPLE =
-            new SimpleCommandExceptionType(Component.literal("该物品含有特殊属性（如损耗、附魔），无法存入云仓库！"));
+            new SimpleCommandExceptionType(Component.literal("Only simple items (no damage, enchantments, or custom " +
+                    "names) can be stored!"));
+    private static final SimpleCommandExceptionType ERROR_NOT_STACKABLE =
+            new SimpleCommandExceptionType(Component.literal("Only stackable items can be stored in the cloud " +
+                    "warehouse!"));
     private static final SimpleCommandExceptionType ERROR_INSUFFICIENT_STOCK =
-            new SimpleCommandExceptionType(Component.literal("库存不足！"));
+            new SimpleCommandExceptionType(Component.literal("Insufficient stock in the warehouse!"));
     private static final SimpleCommandExceptionType ERROR_NOT_IN_INVENTORY =
-            new SimpleCommandExceptionType(Component.literal("你背包里没有足够的此类纯净物品！"));
+            new SimpleCommandExceptionType(Component.literal("You do not have enough simple items of this type in " +
+                    "your inventory!"));
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext context) {
         dispatcher.register(
@@ -64,17 +68,22 @@ public class WarehouseCommand {
         ServerPlayer player = source.getPlayerOrException();
         Item item = itemInput.getItem();
 
-        // 校验：是否是纯净物品（根据需求：不能用名称表示的物品无法存入）
-        // 我们创建一个 1 数量的样本来检查组件
+        // Check if item is stackable
+        if (item.getDefaultMaxStackSize() <= 1) {
+            throw ERROR_NOT_STACKABLE.create();
+        }
+
+        // Check if item is "Simple" (No NBT/Components)
         ItemStack sample = itemInput.createItemStack(1, false);
         if (!sample.getComponentsPatch().isEmpty()) {
             throw ERROR_NOT_SIMPLE.create();
         }
 
-        // 统计玩家背包里有多少个符合条件的“纯净”物品
+        // Count eligible items in player inventory
         int available = 0;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack stack = player.getInventory().getItem(i);
+            // Must match item AND be simple
             if (stack.is(item) && stack.getComponentsPatch().isEmpty()) {
                 available += stack.getCount();
             }
@@ -84,46 +93,50 @@ public class WarehouseCommand {
             throw ERROR_NOT_IN_INVENTORY.create();
         }
 
-        // 扣除背包物品
-        int remainingToNotify = count;
-        for (int i = 0; i < player.getInventory().getContainerSize() && remainingToNotify > 0; i++) {
+        // Remove from inventory
+        int remainingToRemove = count;
+        for (int i = 0; i < player.getInventory().getContainerSize() && remainingToRemove > 0; i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (stack.is(item) && stack.getComponentsPatch().isEmpty()) {
-                int toTake = Math.min(stack.getCount(), remainingToNotify);
+                int toTake = Math.min(stack.getCount(), remainingToRemove);
                 stack.shrink(toTake);
-                remainingToNotify -= toTake;
+                remainingToRemove -= toTake;
             }
         }
 
-        // 存入仓库
+        // Save to state
         CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
         state.addItem(item, count);
 
-        source.sendSuccess(() -> Component.literal("成功存入 " + count + " 个 " + item.getDescriptionId()), true);
+        source.sendSuccess(() -> Component.literal("Successfully stored " + count + "x ").append(item.getName()), true);
         return count;
     }
 
     private static int fetchItem(CommandSourceStack source, ItemInput itemInput, int count) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         Item item = itemInput.getItem();
-        CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
 
+        // Safety check for fetching (consistency)
+        if (item.getDefaultMaxStackSize() <= 1) {
+            throw ERROR_NOT_STACKABLE.create();
+        }
+
+        CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
         int stock = state.getItems().getOrDefault(item, 0);
+
         if (stock < count) {
             throw ERROR_INSUFFICIENT_STOCK.create();
         }
 
-        // 仓库扣除
         state.removeItem(item, count);
 
-        // 给玩家物品（仿照 GiveCommand 的溢出逻辑：背包满了掉在地上）
         ItemStack stackToGive = new ItemStack(item, count);
-        boolean added = player.getInventory().add(stackToGive);
-        if (!added || !stackToGive.isEmpty()) {
+        if (!player.getInventory().add(stackToGive)) {
             player.drop(stackToGive, false);
         }
 
-        source.sendSuccess(() -> Component.literal("成功取出 " + count + " 个 " + item.getDescriptionId()), true);
+        source.sendSuccess(() -> Component.literal("Successfully fetched " + count + "x ").append(item.getName()),
+                true);
         return count;
     }
 
@@ -132,7 +145,7 @@ public class WarehouseCommand {
         CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
         int stock = state.getItems().getOrDefault(item, 0);
 
-        source.sendSuccess(() -> Component.literal(item.getDescriptionId() + " 的库存数量为: " + stock), false);
+        source.sendSuccess(() -> Component.literal("Warehouse stock for ").append(item.getName()).append(": " + stock), false);
         return stock;
     }
 
@@ -140,15 +153,20 @@ public class WarehouseCommand {
         CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
         Map<Item, Integer> allItems = state.getItems();
 
-        if (allItems.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("仓库目前是空的。"), false);
+        // Filter and count active entries
+        long activeCount = allItems.entrySet().stream().filter(e -> e.getValue() > 0).count();
+
+        if (activeCount == 0) {
+            source.sendSuccess(() -> Component.literal("The warehouse is currently empty."), false);
             return 0;
         }
 
-        source.sendSuccess(() -> Component.literal("--- 云仓库清单 ---"), false);
+        source.sendSuccess(() -> Component.literal("--- Cloud Warehouse Inventory ---"), false);
         for (Map.Entry<Item, Integer> entry : allItems.entrySet()) {
-            source.sendSuccess(() -> Component.literal("- " + entry.getKey().getDescriptionId() + ": " + entry.getValue()), false);
+            if (entry.getValue() > 0) {
+                source.sendSuccess(() -> Component.literal("- ").append(entry.getKey().getName()).append(": " + entry.getValue()), false);
+            }
         }
-        return allItems.size();
+        return (int) activeCount;
     }
 }

@@ -24,21 +24,6 @@ public class LittleTomato implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 
             WarehouseCommand.register(dispatcher, registryAccess);
-
-            dispatcher.register(Commands.literal("echo")
-                    .then(Commands.argument("message", StringArgumentType.greedyString())
-                            .executes(context -> {
-                                String input = StringArgumentType.getString(context, "message");
-
-                                context.getSource().sendSuccess(
-                                        () -> Component.literal("Echo: " + input),
-                                        false
-                                );
-
-                                return 1;
-                            })
-                    )
-            );
         });
     }
 }
