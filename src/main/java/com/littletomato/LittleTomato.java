@@ -1,24 +1,37 @@
 package com.littletomato;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ModInitializer;
-
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class LittleTomato implements ModInitializer {
-	public static final String MOD_ID = "little_tomato";
+    public static final String MOD_ID = "little_tomato";
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-	// This logger is used to write text to the console and the log file.
-	// It is considered best practice to use your mod id as the logger's name.
-	// That way, it's clear which mod wrote info, warnings, and errors.
-	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+    @Override
+    public void onInitialize() {
+        LOGGER.info("Tomato Cloud Warehouse Initializing...");
 
-	@Override
-	public void onInitialize() {
-		// This code runs as soon as Minecraft is in a mod-load-ready state.
-		// However, some things (like resources) may still be uninitialized.
-		// Proceed with mild caution.
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 
-		LOGGER.info("Hello Fabric world!");
-	}
+            dispatcher.register(Commands.literal("echo")
+                    .then(Commands.argument("message", StringArgumentType.greedyString())
+                            .executes(context -> {
+                                String input = StringArgumentType.getString(context, "message");
+
+                                context.getSource().sendSuccess(
+                                        () -> Component.literal("Echo: " + input),
+                                        false
+                                );
+
+                                return 1;
+                            })
+                    )
+            );
+        });
+    }
 }
