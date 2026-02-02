@@ -12,6 +12,7 @@ import net.minecraft.commands.arguments.item.ItemInput;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 
 import java.util.Map;
 
@@ -26,7 +27,13 @@ public class WarehouseCommand {
     private static final SimpleCommandExceptionType ERROR_NOT_IN_INVENTORY =
             new SimpleCommandExceptionType(Component.literal("You don't have enough simple items in your inventory!"));
 
-    public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext context) {
+    public static void registerCommand() {
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            WarehouseCommand.register(dispatcher, registryAccess);
+        });
+    }
+
+    private static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext context) {
         dispatcher.register(
                 Commands.literal("wh")
                         // /wh store <item> <count>

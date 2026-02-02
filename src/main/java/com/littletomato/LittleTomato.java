@@ -1,7 +1,6 @@
 package com.littletomato;
 
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,9 +14,6 @@ public class LittleTomato implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("Tomato Cloud Warehouse Initializing...");
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-
-            WarehouseCommand.register(dispatcher, registryAccess);
-        });
+        WarehouseCommand.registerCommand();
     }
 }
