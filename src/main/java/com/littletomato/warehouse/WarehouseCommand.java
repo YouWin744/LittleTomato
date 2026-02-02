@@ -12,28 +12,24 @@ import net.minecraft.commands.arguments.item.ItemInput;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
 
 import java.util.Map;
 
 public class WarehouseCommand {
-    //Error Messages
+
     private static final SimpleCommandExceptionType ERROR_NOT_SIMPLE =
-            new SimpleCommandExceptionType(Component.literal("Only simple items (no damage, enchantments, or custom " +
-                    "names) can be stored!"));
+            new SimpleCommandExceptionType(Component.literal("Only simple items (no damage/NBT) can be stored!"));
     private static final SimpleCommandExceptionType ERROR_NOT_STACKABLE =
-            new SimpleCommandExceptionType(Component.literal("Only stackable items can be stored in the cloud " +
-                    "warehouse!"));
+            new SimpleCommandExceptionType(Component.literal("Only stackable items are allowed!"));
     private static final SimpleCommandExceptionType ERROR_INSUFFICIENT_STOCK =
             new SimpleCommandExceptionType(Component.literal("Insufficient stock in the warehouse!"));
     private static final SimpleCommandExceptionType ERROR_NOT_IN_INVENTORY =
-            new SimpleCommandExceptionType(Component.literal("You do not have enough simple items of this type in " +
-                    "your inventory!"));
+            new SimpleCommandExceptionType(Component.literal("You don't have enough simple items in your inventory!"));
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext context) {
         dispatcher.register(
-                Commands.literal("cw")
-                        // /cw store <item> <count>
+                Commands.literal("wh")
+                        // /wh store <item> <count>
                         .then(Commands.literal("store")
                                 .then(Commands.argument("item", ItemArgument.item(context))
                                         .then(Commands.argument("count", IntegerArgumentType.integer(1))
@@ -42,7 +38,11 @@ public class WarehouseCommand {
                                         )
                                 )
                         )
-                        // /cw fetch <item> <count>
+                        // /wh store-all
+                        .then(Commands.literal("store-all")
+                                .executes(ctx -> storeAllItems(ctx.getSource()))
+                        )
+                        // /wh fetch <item> <count>
                         .then(Commands.literal("fetch")
                                 .then(Commands.argument("item", ItemArgument.item(context))
                                         .then(Commands.argument("count", IntegerArgumentType.integer(1))
@@ -51,109 +51,74 @@ public class WarehouseCommand {
                                         )
                                 )
                         )
-                        // /cw query <item>
-                        .then(Commands.literal("query")
+                        // /wh list <item>
+                        .then(Commands.literal("list")
                                 .then(Commands.argument("item", ItemArgument.item(context))
-                                        .executes(ctx -> queryItem(ctx.getSource(), ItemArgument.getItem(ctx, "item")))
+                                        .executes(ctx -> listItem(ctx.getSource(), ItemArgument.getItem(ctx, "item")))
                                 )
                         )
-                        // /cw list
-                        .then(Commands.literal("list")
-                                .executes(ctx -> listItems(ctx.getSource()))
+                        // /wh list-all
+                        .then(Commands.literal("list-all")
+                                .executes(ctx -> listAllItems(ctx.getSource()))
                         )
         );
     }
 
     private static int storeItem(CommandSourceStack source, ItemInput itemInput, int count) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
+        WarehouseState state = WarehouseState.getCloudWarehouseState(source.getServer());
         Item item = itemInput.getItem();
 
-        // Check if item is stackable
-        if (item.getDefaultMaxStackSize() <= 1) {
-            throw ERROR_NOT_STACKABLE.create();
-        }
-
-        // Check if item is "Simple" (No NBT/Components)
-        ItemStack sample = itemInput.createItemStack(1, false);
-        if (!sample.getComponentsPatch().isEmpty()) {
-            throw ERROR_NOT_SIMPLE.create();
-        }
-
-        // Count eligible items in player inventory
-        int available = 0;
-        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
-            ItemStack stack = player.getInventory().getItem(i);
-            // Must match item AND be simple
-            if (stack.is(item) && stack.getComponentsPatch().isEmpty()) {
-                available += stack.getCount();
-            }
-        }
-
-        if (available < count) {
-            throw ERROR_NOT_IN_INVENTORY.create();
-        }
-
-        // Remove from inventory
-        int remainingToRemove = count;
-        for (int i = 0; i < player.getInventory().getContainerSize() && remainingToRemove > 0; i++) {
-            ItemStack stack = player.getInventory().getItem(i);
-            if (stack.is(item) && stack.getComponentsPatch().isEmpty()) {
-                int toTake = Math.min(stack.getCount(), remainingToRemove);
-                stack.shrink(toTake);
-                remainingToRemove -= toTake;
-            }
-        }
-
-        // Save to state
-        CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
-        state.addItem(item, count);
+        translateResult(state.deposit(player, item, count));
 
         source.sendSuccess(() -> Component.literal("Successfully stored " + count + "x ").append(item.getName()), true);
         return count;
     }
 
+    private static int storeAllItems(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        WarehouseState state = WarehouseState.getCloudWarehouseState(source.getServer());
+
+        Map<Item, Integer> deposited = state.depositAll(player);
+
+        if (deposited.isEmpty()) {
+            source.sendFailure(Component.literal("No eligible simple items found in your inventory to store."));
+            return 0;
+        }
+
+        int totalCount = deposited.values().stream().mapToInt(Integer::intValue).sum();
+        source.sendSuccess(() -> Component.literal("Successfully stored " + totalCount + " items (")
+                .append(String.valueOf(deposited.size()))
+                .append(" types) in the warehouse."), true);
+
+        return totalCount;
+    }
+
     private static int fetchItem(CommandSourceStack source, ItemInput itemInput, int count) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
+        WarehouseState state = WarehouseState.getCloudWarehouseState(source.getServer());
         Item item = itemInput.getItem();
 
-        // Safety check for fetching (consistency)
-        if (item.getDefaultMaxStackSize() <= 1) {
-            throw ERROR_NOT_STACKABLE.create();
-        }
-
-        CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
-        int stock = state.getItems().getOrDefault(item, 0);
-
-        if (stock < count) {
-            throw ERROR_INSUFFICIENT_STOCK.create();
-        }
-
-        state.removeItem(item, count);
-
-        ItemStack stackToGive = new ItemStack(item, count);
-        if (!player.getInventory().add(stackToGive)) {
-            player.drop(stackToGive, false);
-        }
+        translateResult(state.withdraw(player, item, count));
 
         source.sendSuccess(() -> Component.literal("Successfully fetched " + count + "x ").append(item.getName()),
                 true);
         return count;
     }
 
-    private static int queryItem(CommandSourceStack source, ItemInput itemInput) {
+    private static int listItem(CommandSourceStack source, ItemInput itemInput) {
         Item item = itemInput.getItem();
-        CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
+        WarehouseState state = WarehouseState.getCloudWarehouseState(source.getServer());
         int stock = state.getItems().getOrDefault(item, 0);
 
         source.sendSuccess(() -> Component.literal("Warehouse stock for ").append(item.getName()).append(": " + stock), false);
         return stock;
     }
 
-    private static int listItems(CommandSourceStack source) {
-        CloudWarehouseState state = CloudWarehouseState.getCloudWarehouseState(source.getServer());
+    private static int listAllItems(CommandSourceStack source) {
+        WarehouseState state = WarehouseState.getCloudWarehouseState(source.getServer());
         Map<Item, Integer> allItems = state.getItems();
 
-        // Filter and count active entries
         long activeCount = allItems.entrySet().stream().filter(e -> e.getValue() > 0).count();
 
         if (activeCount == 0) {
@@ -162,11 +127,22 @@ public class WarehouseCommand {
         }
 
         source.sendSuccess(() -> Component.literal("--- Cloud Warehouse Inventory ---"), false);
-        for (Map.Entry<Item, Integer> entry : allItems.entrySet()) {
-            if (entry.getValue() > 0) {
-                source.sendSuccess(() -> Component.literal("- ").append(entry.getKey().getName()).append(": " + entry.getValue()), false);
+        allItems.forEach((item, count) -> {
+            if (count > 0) {
+                source.sendSuccess(() -> Component.literal("- ").append(item.getName()).append(": " + count), false);
+            }
+        });
+        return (int) activeCount;
+    }
+
+    private static void translateResult(WarehouseState.OperationResult result) throws CommandSyntaxException {
+        switch (result) {
+            case NOT_STACKABLE -> throw ERROR_NOT_STACKABLE.create();
+            case NOT_SIMPLE -> throw ERROR_NOT_SIMPLE.create();
+            case INSUFFICIENT_STOCK -> throw ERROR_INSUFFICIENT_STOCK.create();
+            case NOT_IN_INVENTORY -> throw ERROR_NOT_IN_INVENTORY.create();
+            case SUCCESS -> {
             }
         }
-        return (int) activeCount;
     }
 }
