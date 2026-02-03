@@ -1,6 +1,7 @@
 package com.littletomato.warehouse;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -25,13 +26,26 @@ public class WarehouseState extends SavedData {
     }
 
     private final Map<Item, Integer> items;
+    private long lastUpdated;
 
     public WarehouseState() {
         this.items = new HashMap<>();
+        this.lastUpdated = System.currentTimeMillis();
     }
 
-    public WarehouseState(Map<Item, Integer> items) {
+    public WarehouseState(Map<Item, Integer> items, long lastUpdated) {
         this.items = new HashMap<>(items);
+        this.lastUpdated = lastUpdated;
+    }
+
+    @Override
+    public void setDirty() {
+        this.lastUpdated = System.currentTimeMillis();
+        super.setDirty();
+    }
+
+    public long getLastUpdated() {
+        return lastUpdated;
     }
 
     /**
@@ -138,9 +152,11 @@ public class WarehouseState extends SavedData {
     private static final Codec<Map<Item, Integer>> MAP_CODEC =
             Codec.unboundedMap(BuiltInRegistries.ITEM.byNameCodec(), Codec.INT);
 
-    private static final Codec<WarehouseState> CODEC = MAP_CODEC.xmap(
-            WarehouseState::new,
-            state -> state.items
+    private static final Codec<WarehouseState> CODEC = RecordCodecBuilder.create(instance ->
+            instance.group(
+                    MAP_CODEC.fieldOf("items").forGetter(s -> s.items),
+                    Codec.LONG.fieldOf("lastUpdated").forGetter(s -> s.lastUpdated)
+            ).apply(instance, WarehouseState::new)
     );
 
     public static final SavedDataType<WarehouseState> TYPE = new SavedDataType<>(
