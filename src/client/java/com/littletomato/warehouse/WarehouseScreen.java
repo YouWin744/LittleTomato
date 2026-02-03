@@ -2,32 +2,34 @@ package com.littletomato.warehouse;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.client.gui.components.Button;
+import net.minecraft.world.item.Item;
+
+import java.util.Map;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 public class WarehouseScreen extends Screen {
+
+    private double scrollAmount = 0;
+    private final int ENTRY_HEIGHT = 12;
+    private final int LIST_TOP = 40;
+    private final int LIST_BOTTOM_MARGIN = 25;
+
+    private final int TEXT_COLOR_WHITE = 0xFFFFFFFF;
+
+    private static final DateTimeFormatter DATE_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                    .withZone(ZoneId.systemDefault()); // 使用系统本地时区
+
     public WarehouseScreen(Component title) {
         super(title);
     }
 
     @Override
     protected void init() {
-        Button buttonWidget = Button.builder(Component.literal("Hello World"), (btn) -> {
-            // When the button is clicked, we can display a toast to the screen.
-            this.minecraft.getToastManager().addToast(
-                    SystemToast.multiline(this.minecraft, SystemToast.SystemToastId.NARRATOR_TOGGLE,
-                            Component.nullToEmpty("Hello World!"), Component.nullToEmpty("This is a toast."))
-            );
-        }).bounds(40, 40, 120, 20).build();
-        // x, y, width, height
-        // It's recommended to use the fixed height of 20 to prevent rendering issues with the button
-        // textures.
-
-        // Register the button widget.
-        this.addRenderableWidget(buttonWidget);
-
         ClientPlayNetworking.send(new WarehousePayloads.RequestWarehouseDataC2SPayload());
     }
 
@@ -35,23 +37,47 @@ public class WarehouseScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
         super.render(graphics, mouseX, mouseY, delta);
 
-        // Minecraft doesn't have a "label" widget, so we'll have to draw our own text.
-        // We'll subtract the font height from the Y position to make the text appear above the button.
-        // Subtracting an extra 10 pixels will give the text some padding.
-        // textRenderer, text, x, y, color, hasShadow
-//        graphics.drawString(this.font, "Special Button", 40, 40 - this.font.lineHeight - 10, 0xFFFFFFFF, true);
+        graphics.drawString(this.font, "Cloud Warehouse Status (Scroll to view)", 20, 15, TEXT_COLOR_WHITE, true);
 
-        // 获取缓存中的种类数
-        int typeCount = ClientWarehouseCache.getTypeCount();
+        Map<Item, Integer> items = ClientWarehouseCache.getItems();
+        int listBottom = this.height - LIST_BOTTOM_MARGIN;
+
+        // 开启剪裁
+        graphics.enableScissor(0, LIST_TOP, this.width, listBottom);
+
+        int currentY = LIST_TOP - (int) scrollAmount;
+        int index = 0;
+        for (Map.Entry<Item, Integer> entry : items.entrySet()) {
+            String itemName = entry.getKey().getDescriptionId();
+            String fullText = (index + 1) + ". " + itemName + " x" + entry.getValue();
+
+            if (currentY + ENTRY_HEIGHT > LIST_TOP && currentY < listBottom) {
+                graphics.drawString(this.font, fullText, 30, currentY, TEXT_COLOR_WHITE, false);
+            }
+            currentY += ENTRY_HEIGHT;
+            index++;
+        }
+
+        graphics.disableScissor();
+
+        // 绘制底部状态栏
         long ts = ClientWarehouseCache.getLastUpdated();
+        String timeStr = (ts <= 0) ? "Never" : DATE_FORMATTER.format(Instant.ofEpochMilli(ts));
+        graphics.drawString(this.font,
+                "Total Types: " + items.size() + " | Last Sync: " + timeStr,
+                5,
+                this.height - 15,
+                TEXT_COLOR_WHITE, // 这里建议直接用颜色代码或定义的常量
+                false);
+    }
 
-        graphics.drawCenteredString(this.font, "Cloud Warehouse Status", this.width / 2, 20, 0xFFFFFF);
-
-        String text = "Total Item Types: " + typeCount;
-//        graphics.drawCenteredString(this.font, text, this.width / 2, 60, 0x00FF00);
-        graphics.drawString(this.font, text, 40, 40 - this.font.lineHeight - 10, 0xFFFFFFFF, true);
-
-        graphics.drawCenteredString(this.font, "Last Sync: " + ts, this.width / 2, 80, 0xAAAAAA);
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        this.scrollAmount -= verticalAmount * 15;
+        int totalContentHeight = ClientWarehouseCache.getItems().size() * ENTRY_HEIGHT;
+        int maxScroll = Math.max(0, totalContentHeight - (this.height - LIST_TOP - LIST_BOTTOM_MARGIN));
+        this.scrollAmount = Math.max(0, Math.min(this.scrollAmount, maxScroll));
+        return true; // 返回 true 表示已处理该事件
     }
 
     @Override
