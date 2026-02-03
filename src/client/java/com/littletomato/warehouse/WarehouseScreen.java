@@ -1,5 +1,6 @@
 package com.littletomato.warehouse;
 
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.Screen;
@@ -27,6 +28,7 @@ public class WarehouseScreen extends Screen {
         // Register the button widget.
         this.addRenderableWidget(buttonWidget);
 
+        ClientPlayNetworking.send(new WarehousePayloads.RequestWarehouseDataC2SPayload());
     }
 
     @Override
@@ -37,6 +39,23 @@ public class WarehouseScreen extends Screen {
         // We'll subtract the font height from the Y position to make the text appear above the button.
         // Subtracting an extra 10 pixels will give the text some padding.
         // textRenderer, text, x, y, color, hasShadow
-        graphics.drawString(this.font, "Special Button", 40, 40 - this.font.lineHeight - 10, 0xFFFFFFFF, true);
+//        graphics.drawString(this.font, "Special Button", 40, 40 - this.font.lineHeight - 10, 0xFFFFFFFF, true);
+
+        // 获取缓存中的种类数
+        int typeCount = ClientWarehouseCache.getTypeCount();
+        long ts = ClientWarehouseCache.getLastUpdated();
+
+        graphics.drawCenteredString(this.font, "Cloud Warehouse Status", this.width / 2, 20, 0xFFFFFF);
+
+        String text = "Total Item Types: " + typeCount;
+//        graphics.drawCenteredString(this.font, text, this.width / 2, 60, 0x00FF00);
+        graphics.drawString(this.font, text, 40, 40 - this.font.lineHeight - 10, 0xFFFFFFFF, true);
+
+        graphics.drawCenteredString(this.font, "Last Sync: " + ts, this.width / 2, 80, 0xAAAAAA);
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
     }
 }

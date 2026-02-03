@@ -1,5 +1,6 @@
 package com.littletomato.warehouse;
 
+import com.littletomato.LittleTomato;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -78,6 +79,8 @@ public class WarehouseCommand {
 
         translateResult(state.deposit(player, item, count));
 
+        // success
+        LittleTomato.broadcastUpdate(source.getServer());
         source.sendSuccess(() -> Component.literal("Successfully stored " + count + "x ").append(item.getName()), true);
         return count;
     }
@@ -94,6 +97,9 @@ public class WarehouseCommand {
         }
 
         int totalCount = deposited.values().stream().mapToInt(Integer::intValue).sum();
+
+        // success
+        LittleTomato.broadcastUpdate(source.getServer());
         source.sendSuccess(() -> Component.literal("Successfully stored " + totalCount + " items (")
                 .append(String.valueOf(deposited.size()))
                 .append(" types) in the warehouse."), true);
@@ -108,6 +114,10 @@ public class WarehouseCommand {
 
         translateResult(state.withdraw(player, item, count));
 
+        if (count > 0) {
+            // success
+            LittleTomato.broadcastUpdate(source.getServer());
+        }
         source.sendSuccess(() -> Component.literal("Successfully fetched " + count + "x ").append(item.getName()),
                 true);
         return count;
