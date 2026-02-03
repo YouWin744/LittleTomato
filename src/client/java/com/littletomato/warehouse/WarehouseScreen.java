@@ -1,14 +1,19 @@
 package com.littletomato.warehouse;
 
+import com.mojang.blaze3d.platform.InputConstants; // 必须导入
+import com.mojang.blaze3d.platform.Window;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent; // 对应你提供的源码
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import org.lwjgl.glfw.GLFW; // 必须导入
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -45,21 +50,31 @@ public class WarehouseScreen extends Screen {
 
         int dividerX = this.width / 2;
 
-        // 1. 搜索框
         this.searchBox = new EditBox(this.font, 20, 40, dividerX - 40, 20, Component.literal("Search"));
-        this.searchBox.setResponder(text -> {
-            // 搜索内容改变时，重置滚动并强制检查边界
-            this.scrollAmount = 0;
-        });
+        this.searchBox.setResponder(text -> this.scrollAmount = 0);
         this.addRenderableWidget(this.searchBox);
 
-        // 2. Store All 按钮
         int buttonWidth = 100;
         int buttonX = dividerX + (dividerX - buttonWidth) / 2;
         this.storeAllButton = Button.builder(Component.literal("Store All"), button -> {
-            // TODO: 发送 DepositAllC2SPayload
+            ClientPlayNetworking.send(new WarehousePayloads.DepositAllC2SPayload());
         }).bounds(buttonX, this.height - 45, buttonWidth, 20).build();
         this.addRenderableWidget(this.storeAllButton);
+    }
+
+    private List<Map.Entry<Item, Integer>> getFilteredItems() {
+        String filter = searchBox.getValue().toLowerCase();
+        return ClientWarehouseCache.getItems().entrySet().stream()
+                .filter(entry -> entry.getKey().getName().getString().toLowerCase().contains(filter))
+                .sorted(Comparator.comparing(entry -> entry.getKey().getName().getString()))
+                .collect(Collectors.toList());
+    }
+
+    // 辅助方法：检查当前是否按下了 Shift 键
+    private boolean isShiftDown() {
+        Window window = Minecraft.getInstance().getWindow();
+        return InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_SHIFT) ||
+                InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_SHIFT);
     }
 
     @Override
@@ -71,49 +86,30 @@ public class WarehouseScreen extends Screen {
         graphics.drawString(this.font, "Your Inventory", dividerX + 20, 15, TEXT_COLOR_WHITE, true);
         graphics.fill(dividerX - 1, 10, dividerX, this.height - 10, 0x88FFFFFF);
 
-        // --- 左半边渲染 ---
         renderWarehousePart(graphics, dividerX, listBottom);
-
-        // --- 右半边渲染 ---
         renderPlayerInventory(graphics, dividerX + 20, 40);
 
         super.render(graphics, mouseX, mouseY, delta);
     }
 
     private void renderWarehousePart(GuiGraphics graphics, int dividerX, int listBottom) {
-        // 1. 过滤与排序
-        String filter = searchBox.getValue().toLowerCase();
-        List<Map.Entry<Item, Integer>> sortedItems = ClientWarehouseCache.getItems().entrySet().stream()
-                .filter(entry -> entry.getKey().getName().getString().toLowerCase().contains(filter))
-                .sorted(Comparator.comparing(entry -> entry.getKey().getName().getString()))
-                .collect(Collectors.toList());
-
-        // 2. 核心：计算最大滚动值并钳制当前滚动量
-        // 可视区域高度
+        List<Map.Entry<Item, Integer>> sortedItems = getFilteredItems();
         int visibleHeight = listBottom - LIST_TOP;
-        // 总内容高度
         int totalContentHeight = sortedItems.size() * ENTRY_HEIGHT;
-        // 最大滚动位移 = 总高 - 可视高 (不能小于0)
         int maxScroll = Math.max(0, totalContentHeight - visibleHeight);
 
-        // 实时修正滚动位置（防止搜索导致列表变短后出现空白）
-        if (this.scrollAmount > maxScroll) {
-            this.scrollAmount = maxScroll;
-        }
+        if (this.scrollAmount > maxScroll) this.scrollAmount = maxScroll;
 
-        // 3. 渲染列表
         graphics.enableScissor(0, LIST_TOP, dividerX - 5, listBottom);
         int currentY = LIST_TOP - (int) scrollAmount;
 
         for (int i = 0; i < sortedItems.size(); i++) {
             Map.Entry<Item, Integer> entry = sortedItems.get(i);
             Item item = entry.getKey();
-
             if (currentY + ENTRY_HEIGHT > LIST_TOP && currentY < listBottom) {
                 graphics.drawString(this.font, (i + 1) + ".", 15, currentY + 6, TEXT_COLOR_GRAY, false);
                 graphics.renderItem(new ItemStack(item), 35, currentY + 2);
                 graphics.drawString(this.font, item.getName(), 55, currentY + 6, TEXT_COLOR_WHITE, false);
-
                 String countText = "x" + entry.getValue();
                 int nameWidth = this.font.width(item.getName());
                 graphics.drawString(this.font, countText, 58 + nameWidth, currentY + 6, TEXT_COLOR_GRAY, false);
@@ -122,22 +118,18 @@ public class WarehouseScreen extends Screen {
         }
         graphics.disableScissor();
 
-        // 4. 底部信息
         long ts = ClientWarehouseCache.getLastUpdated();
         String timeStr = (ts <= 0) ? "Never" : DATE_FORMATTER.format(Instant.ofEpochMilli(ts));
-        String statusText = "Updated: " + timeStr;
-        graphics.drawString(this.font, statusText, 20, this.height - 20, TEXT_COLOR_GRAY, false);
+        graphics.drawString(this.font, "Updated: " + timeStr, 20, this.height - 20, TEXT_COLOR_GRAY, false);
     }
 
     private void renderPlayerInventory(GuiGraphics graphics, int startX, int startY) {
         if (this.minecraft == null || this.minecraft.player == null) return;
         Inventory inv = this.minecraft.player.getInventory();
         int slotSize = 18;
-
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
-                int index = 9 + row * 9 + col;
-                renderSlot(graphics, inv.getItem(index), startX + col * slotSize, startY + row * slotSize);
+                renderSlot(graphics, inv.getItem(9 + row * 9 + col), startX + col * slotSize, startY + row * slotSize);
             }
         }
         int hotbarY = startY + (3 * slotSize) + 10;
@@ -155,19 +147,76 @@ public class WarehouseScreen extends Screen {
     }
 
     @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFirstClick) {
+        double mouseX = event.x();
+        double mouseY = event.y();
+
+        int dividerX = this.width / 2;
+        int listBottom = this.height - LIST_BOTTOM_MARGIN;
+
+        // 1. 仓库列表交互 (取回)
+        if (mouseX < dividerX && mouseY >= LIST_TOP && mouseY <= listBottom) {
+            List<Map.Entry<Item, Integer>> sortedItems = getFilteredItems();
+            int currentY = LIST_TOP - (int) scrollAmount;
+
+            for (Map.Entry<Item, Integer> entry : sortedItems) {
+                if (mouseY >= currentY && mouseY < currentY + ENTRY_HEIGHT) {
+                    Item item = entry.getKey();
+                    // 如果按下 Shift，取出一组；否则取出一个
+                    int count = isShiftDown() ? Math.min(entry.getValue(), item.getDefaultMaxStackSize()) : 1;
+                    ClientPlayNetworking.send(new WarehousePayloads.WithdrawItemC2SPayload(item, count));
+                    return true;
+                }
+                currentY += ENTRY_HEIGHT;
+            }
+        }
+
+        // 2. 玩家背包交互 (存储)
+        if (mouseX >= dividerX + 20 && this.minecraft != null && this.minecraft.player != null) {
+            Inventory inv = this.minecraft.player.getInventory();
+            int startX = dividerX + 20;
+            int startY = 40;
+            int slotSize = 18;
+
+            // 主背包
+            for (int row = 0; row < 3; row++) {
+                for (int col = 0; col < 9; col++) {
+                    if (isMouseInSlot(mouseX, mouseY, startX + col * slotSize, startY + row * slotSize)) {
+                        handleDeposit(inv.getItem(9 + row * 9 + col));
+                        return true;
+                    }
+                }
+            }
+            // 快捷栏
+            int hotbarY = startY + (3 * slotSize) + 10;
+            for (int col = 0; col < 9; col++) {
+                if (isMouseInSlot(mouseX, mouseY, startX + col * slotSize, hotbarY)) {
+                    handleDeposit(inv.getItem(col));
+                    return true;
+                }
+            }
+        }
+
+        return super.mouseClicked(event, isFirstClick);
+    }
+
+    private boolean isMouseInSlot(double mouseX, double mouseY, int slotX, int slotY) {
+        return mouseX >= slotX && mouseX < slotX + 16 && mouseY >= slotY && mouseY < slotY + 16;
+    }
+
+    private void handleDeposit(ItemStack stack) {
+        if (stack.isEmpty()) return;
+        // 如果按下 Shift，存入整格；否则存入一个
+        int count = isShiftDown() ? stack.getCount() : 1;
+        ClientPlayNetworking.send(new WarehousePayloads.DepositItemC2SPayload(stack.getItem(), count));
+    }
+
+    @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         if (mouseX < this.width / 2.0) {
-            // 计算当前条件下的 maxScroll
-            String filter = searchBox.getValue().toLowerCase();
-            long filteredCount = ClientWarehouseCache.getItems().entrySet().stream()
-                    .filter(entry -> entry.getKey().getName().getString().toLowerCase().contains(filter))
-                    .count();
-
             int listBottom = this.height - LIST_BOTTOM_MARGIN;
-            int totalContentHeight = (int) filteredCount * ENTRY_HEIGHT;
+            int totalContentHeight = getFilteredItems().size() * ENTRY_HEIGHT;
             int maxScroll = Math.max(0, totalContentHeight - (listBottom - LIST_TOP));
-
-            // 更新并钳制滚动值
             this.scrollAmount -= verticalAmount * 20;
             this.scrollAmount = Math.max(0, Math.min(this.scrollAmount, maxScroll));
             return true;
