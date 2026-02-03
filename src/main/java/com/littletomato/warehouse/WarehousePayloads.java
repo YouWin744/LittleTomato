@@ -14,7 +14,7 @@ import java.util.Map;
 
 public class WarehousePayloads {
 
-    // 1. S2C: 服务端同步数据到客户端
+    // 服务端同步数据到客户端
     public record WarehouseDataS2CPayload(Map<Item, Integer> items, long lastUpdated) implements CustomPacketPayload {
         public static final Type<WarehouseDataS2CPayload> ID =
                 new Type<>(Identifier.fromNamespaceAndPath(LittleTomato.MOD_ID, "warehouse_data"));
@@ -34,12 +34,57 @@ public class WarehousePayloads {
         }
     }
 
-    // 2. C2S: 客户端请求数据
+    // 客户端请求数据
     public record RequestWarehouseDataC2SPayload() implements CustomPacketPayload {
         public static final Type<RequestWarehouseDataC2SPayload> ID =
                 new Type<>(Identifier.fromNamespaceAndPath(LittleTomato.MOD_ID, "request_warehouse_data"));
         public static final StreamCodec<RegistryFriendlyByteBuf, RequestWarehouseDataC2SPayload> CODEC =
                 StreamCodec.unit(new RequestWarehouseDataC2SPayload());
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return ID;
+        }
+    }
+
+    // 存入指定物品
+    public record DepositItemC2SPayload(Item item, int count) implements CustomPacketPayload {
+        public static final Type<DepositItemC2SPayload> ID =
+                new Type<>(Identifier.fromNamespaceAndPath(LittleTomato.MOD_ID, "deposit_item"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, DepositItemC2SPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.registry(Registries.ITEM), DepositItemC2SPayload::item,
+                ByteBufCodecs.VAR_INT, DepositItemC2SPayload::count,
+                DepositItemC2SPayload::new
+        );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return ID;
+        }
+    }
+
+    // 存入所有物品
+    public record DepositAllC2SPayload() implements CustomPacketPayload {
+        public static final Type<DepositAllC2SPayload> ID =
+                new Type<>(Identifier.fromNamespaceAndPath(LittleTomato.MOD_ID, "deposit_all"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, DepositAllC2SPayload> CODEC =
+                StreamCodec.unit(new DepositAllC2SPayload());
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return ID;
+        }
+    }
+
+    // 取出指定物品
+    public record WithdrawItemC2SPayload(Item item, int count) implements CustomPacketPayload {
+        public static final Type<WithdrawItemC2SPayload> ID =
+                new Type<>(Identifier.fromNamespaceAndPath(LittleTomato.MOD_ID, "withdraw_item"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, WithdrawItemC2SPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.registry(Registries.ITEM), WithdrawItemC2SPayload::item,
+                ByteBufCodecs.VAR_INT, WithdrawItemC2SPayload::count,
+                WithdrawItemC2SPayload::new
+        );
 
         @Override
         public Type<? extends CustomPacketPayload> type() {

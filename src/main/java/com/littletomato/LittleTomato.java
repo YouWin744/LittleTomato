@@ -2,6 +2,7 @@ package com.littletomato;
 
 import com.littletomato.warehouse.WarehousePayloads;
 import com.littletomato.warehouse.WarehouseState;
+import net.minecraft.world.item.Item;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -11,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.littletomato.warehouse.WarehouseCommand;
+
+import java.util.Map;
 
 //import com.littletomato.warehouse.WarehouseKeyMapping;
 public class LittleTomato implements ModInitializer {
@@ -27,6 +30,12 @@ public class LittleTomato implements ModInitializer {
                 WarehousePayloads.WarehouseDataS2CPayload.CODEC);
         PayloadTypeRegistry.playC2S().register(WarehousePayloads.RequestWarehouseDataC2SPayload.ID,
                 WarehousePayloads.RequestWarehouseDataC2SPayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(WarehousePayloads.DepositItemC2SPayload.ID,
+                WarehousePayloads.DepositItemC2SPayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(WarehousePayloads.DepositAllC2SPayload.ID,
+                WarehousePayloads.DepositAllC2SPayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(WarehousePayloads.WithdrawItemC2SPayload.ID,
+                WarehousePayloads.WithdrawItemC2SPayload.CODEC);
 
         // 服务端接收请求的逻辑
         ServerPlayNetworking.registerGlobalReceiver(WarehousePayloads.RequestWarehouseDataC2SPayload.ID, (payload,
@@ -36,6 +45,44 @@ public class LittleTomato implements ModInitializer {
                 // 发送全量数据给请求的玩家
                 ServerPlayNetworking.send(context.player(),
                         new WarehousePayloads.WarehouseDataS2CPayload(state.getItems(), state.getLastUpdated()));
+            });
+        });
+
+        // 存入指定物品
+        ServerPlayNetworking.registerGlobalReceiver(WarehousePayloads.DepositItemC2SPayload.ID, (payload, context) -> {
+            context.server().execute(() -> {
+                WarehouseState state = WarehouseState.getCloudWarehouseState(context.server());
+                WarehouseState.OperationResult result = state.deposit(context.player(), payload.item(),
+                        payload.count());
+
+                if (result == WarehouseState.OperationResult.SUCCESS) {
+                    broadcastUpdate(context.server());
+                }
+            });
+        });
+
+        // 存入所有
+        ServerPlayNetworking.registerGlobalReceiver(WarehousePayloads.DepositAllC2SPayload.ID, (payload, context) -> {
+            context.server().execute(() -> {
+                WarehouseState state = WarehouseState.getCloudWarehouseState(context.server());
+                Map<Item, Integer> deposited = state.depositAll(context.player());
+
+                if (!deposited.isEmpty()) {
+                    broadcastUpdate(context.server());
+                }
+            });
+        });
+
+        // 取出物品
+        ServerPlayNetworking.registerGlobalReceiver(WarehousePayloads.WithdrawItemC2SPayload.ID, (payload, context) -> {
+            context.server().execute(() -> {
+                WarehouseState state = WarehouseState.getCloudWarehouseState(context.server());
+                WarehouseState.OperationResult result = state.withdraw(context.player(), payload.item(),
+                        payload.count());
+
+                if (result == WarehouseState.OperationResult.SUCCESS) {
+                    broadcastUpdate(context.server());
+                }
             });
         });
     }
