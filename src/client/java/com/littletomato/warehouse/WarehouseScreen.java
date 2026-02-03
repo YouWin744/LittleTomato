@@ -65,6 +65,7 @@ public class WarehouseScreen extends Screen {
     private List<Map.Entry<Item, Integer>> getFilteredItems() {
         String filter = searchBox.getValue().toLowerCase();
         return ClientWarehouseCache.getItems().entrySet().stream()
+                .filter(entry -> entry.getValue() > 0)
                 .filter(entry -> entry.getKey().getName().getString().toLowerCase().contains(filter))
                 .sorted(Comparator.comparing(entry -> entry.getKey().getName().getString()))
                 .collect(Collectors.toList());
@@ -107,12 +108,23 @@ public class WarehouseScreen extends Screen {
             Map.Entry<Item, Integer> entry = sortedItems.get(i);
             Item item = entry.getKey();
             if (currentY + ENTRY_HEIGHT > LIST_TOP && currentY < listBottom) {
+                // 1. 绘制序号
                 graphics.drawString(this.font, (i + 1) + ".", 15, currentY + 6, TEXT_COLOR_GRAY, false);
+
+                // 2. 绘制物品图标 (位置保持在 35)
                 graphics.renderItem(new ItemStack(item), 35, currentY + 2);
-                graphics.drawString(this.font, item.getName(), 55, currentY + 6, TEXT_COLOR_WHITE, false);
-                String countText = "x" + entry.getValue();
-                int nameWidth = this.font.width(item.getName());
-                graphics.drawString(this.font, countText, 58 + nameWidth, currentY + 6, TEXT_COLOR_GRAY, false);
+
+                // 3. 准备数量字符串 (例如 "64 x ")
+                String countText = entry.getValue() + " x ";
+                int countWidth = this.font.width(countText);
+
+                // 4. 先绘制数量 (灰色)
+                // 起始 X 坐标定在 55 (图标后面)
+                graphics.drawString(this.font, countText, 55, currentY + 6, TEXT_COLOR_GRAY, false);
+
+                // 5. 再绘制物品名称 (白色)
+                // X 坐标 = 55 + 数量文字的宽度
+                graphics.drawString(this.font, item.getName(), 55 + countWidth, currentY + 6, TEXT_COLOR_WHITE, false);
             }
             currentY += ENTRY_HEIGHT;
         }
