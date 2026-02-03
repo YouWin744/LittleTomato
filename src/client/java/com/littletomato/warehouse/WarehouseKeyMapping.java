@@ -28,8 +28,6 @@ public class WarehouseKeyMapping {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openGUIKey.consumeClick()) {
                 if (client.player != null) {
-                    client.player.displayClientMessage(Component.literal("Key Pressed!"), false);
-
                     Minecraft.getInstance().setScreen(
                             new WarehouseScreen(Component.empty())
                     );
