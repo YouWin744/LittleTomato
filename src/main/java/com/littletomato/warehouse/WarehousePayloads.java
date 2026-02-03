@@ -48,11 +48,12 @@ public class WarehousePayloads {
     }
 
     // 存入指定物品
-    public record DepositItemC2SPayload(Item item, int count) implements CustomPacketPayload {
+    public record DepositItemC2SPayload(int slotId, int count) implements CustomPacketPayload {
         public static final Type<DepositItemC2SPayload> ID =
                 new Type<>(Identifier.fromNamespaceAndPath(LittleTomato.MOD_ID, "deposit_item"));
+
         public static final StreamCodec<RegistryFriendlyByteBuf, DepositItemC2SPayload> CODEC = StreamCodec.composite(
-                ByteBufCodecs.registry(Registries.ITEM), DepositItemC2SPayload::item,
+                ByteBufCodecs.VAR_INT, DepositItemC2SPayload::slotId,
                 ByteBufCodecs.VAR_INT, DepositItemC2SPayload::count,
                 DepositItemC2SPayload::new
         );

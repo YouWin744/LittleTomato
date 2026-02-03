@@ -52,11 +52,11 @@ public class LittleTomato implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(WarehousePayloads.DepositItemC2SPayload.ID, (payload, context) -> {
             context.server().execute(() -> {
                 WarehouseState state = WarehouseState.getCloudWarehouseState(context.server());
-                WarehouseState.OperationResult result = state.deposit(context.player(), payload.item(),
+                WarehouseState.OperationResult result = state.depositFromSlot(context.player(), payload.slotId(),
                         payload.count());
 
                 if (result == WarehouseState.OperationResult.SUCCESS) {
-                    broadcastUpdate(context.server());
+                    LittleTomato.broadcastUpdate(context.server());
                 }
             });
         });

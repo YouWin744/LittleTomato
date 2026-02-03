@@ -190,20 +190,22 @@ public class WarehouseScreen extends Screen {
             int startY = 40;
             int slotSize = 18;
 
-            // 主背包
+            // 主背包 (索引 9-35)
             for (int row = 0; row < 3; row++) {
                 for (int col = 0; col < 9; col++) {
+                    int slotId = 9 + row * 9 + col; // 计算正确的槽位索引
                     if (isMouseInSlot(mouseX, mouseY, startX + col * slotSize, startY + row * slotSize)) {
-                        handleDeposit(inv.getItem(9 + row * 9 + col));
+                        handleDeposit(slotId, inv.getItem(slotId));
                         return true;
                     }
                 }
             }
-            // 快捷栏
+            // 快捷栏 (索引 0-8)
             int hotbarY = startY + (3 * slotSize) + 10;
             for (int col = 0; col < 9; col++) {
+                int slotId = col; // 快捷栏索引
                 if (isMouseInSlot(mouseX, mouseY, startX + col * slotSize, hotbarY)) {
-                    handleDeposit(inv.getItem(col));
+                    handleDeposit(slotId, inv.getItem(slotId));
                     return true;
                 }
             }
@@ -216,11 +218,10 @@ public class WarehouseScreen extends Screen {
         return mouseX >= slotX && mouseX < slotX + 16 && mouseY >= slotY && mouseY < slotY + 16;
     }
 
-    private void handleDeposit(ItemStack stack) {
+    private void handleDeposit(int slotId, ItemStack stack) {
         if (stack.isEmpty()) return;
-        // 如果按下 Shift，存入整格；否则存入一个
         int count = isShiftDown() ? stack.getCount() : 1;
-        ClientPlayNetworking.send(new WarehousePayloads.DepositItemC2SPayload(stack.getItem(), count));
+        ClientPlayNetworking.send(new WarehousePayloads.DepositItemC2SPayload(slotId, count));
     }
 
     @Override

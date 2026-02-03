@@ -126,7 +126,7 @@ public class WarehouseState extends SavedData {
     }
 
     /**
-     * 取出逻辑
+     * 取出逻辑（指令）
      */
     public OperationResult withdraw(ServerPlayer player, Item item, int count) {
         OperationResult check = validateItem(item, new ItemStack(item));
@@ -144,6 +144,34 @@ public class WarehouseState extends SavedData {
         if (!player.getInventory().add(stackToGive)) {
             player.drop(stackToGive, false);
         }
+        return OperationResult.SUCCESS;
+    }
+
+    /**
+     * 取出逻辑（GUI）
+     */
+    public OperationResult depositFromSlot(ServerPlayer player, int slotId, int count) {
+        if (slotId < 0 || slotId >= player.getInventory().getContainerSize()) {
+            return OperationResult.NOT_IN_INVENTORY;
+        }
+
+        ItemStack stack = player.getInventory().getItem(slotId);
+        if (stack.isEmpty()) return OperationResult.NOT_IN_INVENTORY;
+
+        // 校验物品合法性
+        OperationResult check = validateItem(stack.getItem(), stack);
+        if (check != OperationResult.SUCCESS) return check;
+
+        int toTake = Math.min(stack.getCount(), count);
+        Item item = stack.getItem();
+
+        // 执行扣除
+        stack.shrink(toTake);
+
+        // 存入仓库
+        this.items.merge(item, toTake, Integer::sum);
+        setDirty();
+
         return OperationResult.SUCCESS;
     }
 
