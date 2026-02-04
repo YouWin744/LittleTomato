@@ -3,7 +3,7 @@
 	"package": "com.littletomato.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"ExampleMixin"
+        "TeleportCommandMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
